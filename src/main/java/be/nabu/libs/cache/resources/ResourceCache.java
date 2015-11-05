@@ -94,7 +94,7 @@ public class ResourceCache implements Cache {
 		}
 	}
 
-	private boolean refresh(Resource resource) throws IOException {
+	private synchronized boolean refresh(Resource resource) throws IOException {
 		// strip the extension again
 		String keyValue = resource.getName().replaceAll("\\..*$", "");
 		Object deserializedKey = deserializeKey(keyValue);
@@ -155,7 +155,7 @@ public class ResourceCache implements Cache {
 		}
 		else if (((TimestampedResource) child).getLastModified().before(new Date(new Date().getTime() - cacheTimeout))) {
 			// if we can't refresh the child, remove it
-			if (!refresh(child)) {
+			if (refresher == null || !refresh(child)) {
 				container.delete(child.getName());
 				child = null;
 			}
