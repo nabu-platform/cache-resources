@@ -2,14 +2,18 @@ package be.nabu.libs.cache.resources;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 
 import be.nabu.libs.cache.api.Cache;
+import be.nabu.libs.cache.api.CacheEntry;
 import be.nabu.libs.cache.api.CacheRefresher;
 import be.nabu.libs.cache.api.DataSerializer;
+import be.nabu.libs.cache.api.ExplorableCache;
+import be.nabu.libs.cache.api.LimitedCache;
 import be.nabu.libs.resources.ResourceReadableContainer;
 import be.nabu.libs.resources.ResourceWritableContainer;
 import be.nabu.libs.resources.api.AccessTrackingResource;
@@ -30,7 +34,7 @@ import be.nabu.utils.io.api.ByteBuffer;
 import be.nabu.utils.io.api.ReadableContainer;
 import be.nabu.utils.io.api.WritableContainer;
 
-public class ResourceCache implements Cache {
+public class ResourceCache implements Cache, ExplorableCache, LimitedCache {
 
 	private long maxEntrySize, cacheTimeout;
 	private ManageableContainer<?> container;
@@ -68,13 +72,11 @@ public class ResourceCache implements Cache {
 			container.delete(serializedKey + "." + extension);
 			return false;
 		}
-		if (getSize() > maxCacheSize) {
-			prune();
-		}
+		prune();
 		return true;
 	}
 
-	public List<Resource> getEntries() {
+	public List<Resource> getResources() {
 		List<Resource> resources = new ArrayList<Resource>();
 		for (Resource resource : container) {
 			resources.add(resource);
@@ -110,9 +112,9 @@ public class ResourceCache implements Cache {
 	
 	@Override
 	public synchronized void prune() throws IOException {
-		long totalSize = getSize();
+		long totalSize = getCurrentSize();
 		if (totalSize > maxCacheSize) {
-			List<Resource> list = getEntries();
+			List<Resource> list = getResources();
 			// order by last accessed date, oldest is first
 			Collections.sort(list, new Comparator<Resource>() {
 				@Override
@@ -184,7 +186,7 @@ public class ResourceCache implements Cache {
 	}
 
 	@Override
-	public long getSize() {
+	public long getCurrentSize() {
 		long totalSize = 0l;
 		for (Resource entry : container) {
 			String keyValue = entry.getName().replaceAll("\\..*$", "");
@@ -271,6 +273,20 @@ public class ResourceCache implements Cache {
 
 	public void setValueSerializer(DataSerializer<?> valueSerializer) {
 		this.valueSerializer = valueSerializer;
+	}
+
+	@Override
+	public long getMaxTotalSize() {
+		return maxCacheSize;
+	}
+
+	@Override
+	public Collection<CacheEntry> getEntries() {
+		List<CacheEntry> entries = new ArrayList<CacheEntry>();
+		for (Resource resource : container) {
+			entries.add(new ResourceEntry(resource));
+		}
+		return entries;
 	}
 	
 }
