@@ -36,7 +36,6 @@ public class ResourceCache implements Cache {
 	private ManageableContainer<?> container;
 	private CacheRefresher refresher;
 	private String extension = "bin";
-	private Long totalSize;
 	private long maxCacheSize;
 	private long refreshTimeout;
 	private DataSerializer<?> keySerializer, valueSerializer;
@@ -58,15 +57,12 @@ public class ResourceCache implements Cache {
 	}
 
 	private synchronized void put(String serializedKey, Object value) throws IOException {
-		long sizeToAdd = serializedKey.length();
 		Resource child = container.getChild(serializedKey + "." + extension);
 		if (child == null) {
 			child = container.create(serializedKey + "." + extension, "application/octet-stream");
 		}
 		serializeValue(value, new ResourceWritableContainer((WritableResource) child));
-		sizeToAdd += ((FiniteResource) child).getSize();
-		totalSize += sizeToAdd;
-		if (totalSize > maxCacheSize) {
+		if (getSize() > maxCacheSize) {
 			prune();
 		}
 	}
@@ -92,7 +88,6 @@ public class ResourceCache implements Cache {
 					if (deserializedKey != null) {
 						Object refreshed = refresher.refresh(deserializedKey);
 						if (refreshed != null) {
-							clear(keyValue, true);
 							put(keyValue, refreshed);
 						}
 					}
@@ -127,6 +122,7 @@ public class ResourceCache implements Cache {
 			
 			// if we have gone over size or the entry is timed out, delete it
 			// because we have ordered by last accessed ascending, once we hit the first non-timed out we should stop (if the size constraint is not met)
+			long totalSize = getSize();
 			if (totalSize > maxCacheSize || dateToUse.before(new Date(new Date().getTime() - accessTimeout))) {
 				String keyValue = entryToDelete.getName().replaceAll("\\..*$", "");
 				long sizeToRemove = keyValue.length() + ((FiniteResource) entryToDelete).getSize();
@@ -154,20 +150,10 @@ public class ResourceCache implements Cache {
 	@Override
 	public void clear(Object key) throws IOException {
 		String serializedKey = serializeKey(key);
-		clear(serializedKey, false);
-	}
-
-	private synchronized void clear(String serializedKey, boolean forRefresh) throws IOException {
-		long sizeToRemove = serializedKey.length();
 		Resource child = container.getChild(serializedKey + "." + extension);
 		if (child != null) {
-			sizeToRemove += ((FiniteResource) child).getSize();
-			// if we are clearing for refresh, don't delete the resource
-			if (!forRefresh) {
-				container.delete(serializedKey + "." + extension);
-			}
+			container.delete(serializedKey + "." + extension);
 		}
-		totalSize -= sizeToRemove;
 	}
 
 	@Override
@@ -179,22 +165,14 @@ public class ResourceCache implements Cache {
 		String name = container.getName();
 		((ManageableContainer<?>) parent).delete(name);
 		container = (ManageableContainer<?>) ((ManageableContainer<?>) parent).create(name, Resource.CONTENT_TYPE_DIRECTORY);
-		totalSize = 0l;
 	}
 
 	@Override
 	public long getSize() {
-		// if no total size is known, calculate it based on the resources (they may be persistent)
-		if (totalSize == null) {
-			synchronized(this) {
-				if (totalSize == null) {
-					totalSize = 0l;
-					for (Resource entry : container) {
-						String keyValue = entry.getName().replaceAll("\\..*$", "");
-						totalSize += ((FiniteResource) entry).getSize() + keyValue.length();
-					}
-				}
-			}
+		long totalSize = 0l;
+		for (Resource entry : container) {
+			String keyValue = entry.getName().replaceAll("\\..*$", "");
+			totalSize += ((FiniteResource) entry).getSize() + keyValue.length();
 		}
 		return totalSize;
 	}
