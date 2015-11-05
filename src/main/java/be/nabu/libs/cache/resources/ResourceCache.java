@@ -32,7 +32,7 @@ import be.nabu.utils.io.api.WritableContainer;
 
 public class ResourceCache implements Cache {
 
-	private long maxEntrySize, accessTimeout;
+	private long maxEntrySize, cacheTimeout;
 	private ManageableContainer<?> container;
 	private CacheRefresher refresher;
 	private String extension = "bin";
@@ -40,11 +40,11 @@ public class ResourceCache implements Cache {
 	private long refreshTimeout;
 	private DataSerializer<?> keySerializer, valueSerializer;
 	
-	public ResourceCache(ManageableContainer<?> container, long maxEntrySize, long maxCacheSize, long accessTimeout, CacheRefresher cacheRefresher, long refreshTimeout) {
+	public ResourceCache(ManageableContainer<?> container, long maxEntrySize, long maxCacheSize, long cacheTimeout, CacheRefresher cacheRefresher, long refreshTimeout) {
 		this.container = container;
 		this.maxEntrySize = maxEntrySize;
 		this.maxCacheSize = maxCacheSize;
-		this.accessTimeout = accessTimeout;
+		this.cacheTimeout = cacheTimeout;
 		this.refresher = cacheRefresher;
 		this.refreshTimeout = refreshTimeout;
 	}
@@ -52,19 +52,26 @@ public class ResourceCache implements Cache {
 	@Override
 	public synchronized boolean put(Object key, Object value) throws IOException {
 		String serializedKey = serializeKey(key);
-		put(serializedKey, value);
-		return true;
+		return put(serializedKey, value);
 	}
 
-	private synchronized void put(String serializedKey, Object value) throws IOException {
+	private synchronized boolean put(String serializedKey, Object value) throws IOException {
 		Resource child = container.getChild(serializedKey + "." + extension);
 		if (child == null) {
 			child = container.create(serializedKey + "." + extension, "application/octet-stream");
 		}
-		serializeValue(value, new ResourceWritableContainer((WritableResource) child));
+		try {
+			serializeValue(serializedKey, value, new ResourceWritableContainer((WritableResource) child));
+		}
+		catch (IOException e) {
+			// if we fail to serialize the value (e.g. because it is too big), we must delete the resource
+			container.delete(serializedKey + "." + extension);
+			return false;
+		}
 		if (getSize() > maxCacheSize) {
 			prune();
 		}
+		return true;
 	}
 
 	public List<Resource> getEntries() {
@@ -81,56 +88,58 @@ public class ResourceCache implements Cache {
 			for (Resource resource : container) {
 				// if it was last modified before the refresh timeout, refresh it
 				if (resource instanceof TimestampedResource && ((TimestampedResource) resource).getLastModified().before(new Date(new Date().getTime() - refreshTimeout))) {
-					// strip the extension again
-					String keyValue = resource.getName().replaceAll("\\..*$", "");
-					Object deserializedKey = deserializeKey(keyValue);
-					// it can be null if there is not enough metadata to deserialize the key, in this case it is skipped for refresh
-					if (deserializedKey != null) {
-						Object refreshed = refresher.refresh(deserializedKey);
-						if (refreshed != null) {
-							put(keyValue, refreshed);
-						}
-					}
+					refresh(resource);
 				}
 			}
 		}
 	}
+
+	private boolean refresh(Resource resource) throws IOException {
+		// strip the extension again
+		String keyValue = resource.getName().replaceAll("\\..*$", "");
+		Object deserializedKey = deserializeKey(keyValue);
+		// it can be null if there is not enough metadata to deserialize the key, in this case it is skipped for refresh
+		if (deserializedKey != null) {
+			Object refreshed = refresher.refresh(deserializedKey);
+			if (refreshed != null) {
+				return put(keyValue, refreshed);
+			}
+		}
+		return false;
+	}
 	
 	@Override
 	public synchronized void prune() throws IOException {
-		List<Resource> list = getEntries();
-		// order by last accessed date, oldest is first
-		Collections.sort(list, new Comparator<Resource>() {
-
-			@Override
-			public int compare(Resource o1, Resource o2) {
-				if (o1 instanceof AccessTrackingResource && o2 instanceof AccessTrackingResource) {
-					return ((AccessTrackingResource) o1).getLastAccessed().compareTo(((AccessTrackingResource) o2).getLastAccessed());
+		long totalSize = getSize();
+		if (totalSize > maxCacheSize) {
+			List<Resource> list = getEntries();
+			// order by last accessed date, oldest is first
+			Collections.sort(list, new Comparator<Resource>() {
+				@Override
+				public int compare(Resource o1, Resource o2) {
+					if (o1 instanceof AccessTrackingResource && o2 instanceof AccessTrackingResource) {
+						return ((AccessTrackingResource) o1).getLastAccessed().compareTo(((AccessTrackingResource) o2).getLastAccessed());
+					}
+					else if (o1 instanceof TimestampedResource && o2 instanceof TimestampedResource) {
+						return ((TimestampedResource) o1).getLastModified().compareTo(((TimestampedResource) o2).getLastModified());
+					}
+					return o1.getName().compareTo(o2.getName());
 				}
-				else if (o1 instanceof TimestampedResource && o2 instanceof TimestampedResource) {
-					return ((TimestampedResource) o1).getLastModified().compareTo(((TimestampedResource) o2).getLastModified());
+			});
+			// we first prune the entries that have not been used for the longest time
+			// then we keep pruning as long as they are timed out
+			while(!list.isEmpty()) {
+				Resource entryToDelete = list.remove(0);
+				// if we have gone over size, remove
+				if (totalSize > maxCacheSize) {
+					String keyValue = entryToDelete.getName().replaceAll("\\..*$", "");
+					long sizeToRemove = keyValue.length() + ((FiniteResource) entryToDelete).getSize();
+					container.delete(entryToDelete.getName());
+					totalSize -= sizeToRemove;
 				}
-				return o1.getName().compareTo(o2.getName());
-			}
-			
-		});
-		while(!list.isEmpty()) {
-			Resource entryToDelete = list.remove(0);
-			Date dateToUse = entryToDelete instanceof AccessTrackingResource 
-				? ((AccessTrackingResource) entryToDelete).getLastAccessed()
-				: ((TimestampedResource) entryToDelete).getLastModified();
-			
-			// if we have gone over size or the entry is timed out, delete it
-			// because we have ordered by last accessed ascending, once we hit the first non-timed out we should stop (if the size constraint is not met)
-			long totalSize = getSize();
-			if (totalSize > maxCacheSize || dateToUse.before(new Date(new Date().getTime() - accessTimeout))) {
-				String keyValue = entryToDelete.getName().replaceAll("\\..*$", "");
-				long sizeToRemove = keyValue.length() + ((FiniteResource) entryToDelete).getSize();
-				container.delete(entryToDelete.getName());
-				totalSize -= sizeToRemove;
-			}
-			else {
-				break;
+				else {
+					break;
+				}
 			}
 		}
 	}
@@ -143,6 +152,13 @@ public class ResourceCache implements Cache {
 			// it could be that the entry does not exist or that it is still being added (e.g. the resource exists but not yet the value mapping)
 			// it is however a cache so best effort
 			return null;
+		}
+		else if (((TimestampedResource) child).getLastModified().before(new Date(new Date().getTime() - cacheTimeout))) {
+			// if we can't refresh the child, remove it
+			if (!refresh(child)) {
+				container.delete(child.getName());
+				child = null;
+			}
 		}
 		return child == null ? null : deserializeValue(new ResourceReadableContainer((ReadableResource) child));
 	}
@@ -188,19 +204,19 @@ public class ResourceCache implements Cache {
 		transcoder.setBytesPerLine(0);
 		WritableContainer<ByteBuffer> writable = TranscoderUtils.wrapWritable(buffer, transcoder);
 		writable = TranscoderUtils.wrapWritable(writable, new GZIPEncoder());
-		serializer.serialize(key, IOUtils.toOutputStream(writable));
+		serializer.serialize(key, IOUtils.toOutputStream(IOUtils.limitWritable(writable, maxEntrySize), true));
 		writable.flush();
 		return new String(IOUtils.toBytes(buffer), "ASCII").replace('/', '-');
 	}
 	
 	@SuppressWarnings({ "rawtypes", "unchecked" })
-	protected void serializeValue(Object value, WritableContainer<ByteBuffer> writable) throws IOException {
+	protected void serializeValue(String key, Object value, WritableContainer<ByteBuffer> writable) throws IOException {
 		DataSerializer serializer = getValueSerializer();
 		if (serializer == null) {
 			throw new IllegalArgumentException("No serializer found for the value");
 		}
 		writable = TranscoderUtils.wrapWritable(writable, new GZIPEncoder());
-		serializer.serialize(value, IOUtils.toOutputStream(IOUtils.limitWritable(writable, maxEntrySize)));
+		serializer.serialize(value, IOUtils.toOutputStream(IOUtils.limitWritable(writable, maxEntrySize - key.length()), true));
 		writable.close();
 	}
 	
@@ -230,7 +246,7 @@ public class ResourceCache implements Cache {
 	}
 
 	public long getAccessTimeout() {
-		return accessTimeout;
+		return cacheTimeout;
 	}
 
 	public long getMaxCacheSize() {
