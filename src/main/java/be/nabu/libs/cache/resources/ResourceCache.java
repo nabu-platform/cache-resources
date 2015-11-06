@@ -113,7 +113,7 @@ public class ResourceCache implements Cache, ExplorableCache, LimitedCache {
 	@Override
 	public synchronized void prune() throws IOException {
 		long totalSize = getCurrentSize();
-		if (totalSize > maxCacheSize) {
+		if (maxCacheSize > 0 && totalSize > maxCacheSize) {
 			List<Resource> list = getResources();
 			// order by last accessed date, oldest is first
 			Collections.sort(list, new Comparator<Resource>() {
