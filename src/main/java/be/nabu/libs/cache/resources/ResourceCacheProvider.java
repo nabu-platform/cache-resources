@@ -9,6 +9,7 @@ import java.util.Map;
 import be.nabu.libs.cache.api.Cache;
 import be.nabu.libs.cache.api.CacheProvider;
 import be.nabu.libs.cache.api.CacheRefresher;
+import be.nabu.libs.cache.impl.LastModifiedTimeoutManager;
 import be.nabu.libs.resources.ResourceUtils;
 import be.nabu.libs.resources.api.ManageableContainer;
 import be.nabu.libs.resources.api.Resource;
@@ -19,21 +20,19 @@ public class ResourceCacheProvider implements CacheProvider {
 	private Map<String, Cache> caches = new HashMap<String, Cache>();
 	private long maxEntrySize;
 	private long maxTotalSize;
-	private long accessTimeout;
+	private long cacheTimeout;
 	private CacheRefresher refresher;
-	private long refreshTimeout;
 	
-	public ResourceCacheProvider(ManageableContainer<?> root, long maxEntrySize, long maxTotalSize, long accessTimeout, CacheRefresher refresher, long refreshTimeout) throws IOException {
+	public ResourceCacheProvider(ManageableContainer<?> root, long maxEntrySize, long maxTotalSize, long cacheTimeout, CacheRefresher refresher) throws IOException {
 		this.maxEntrySize = maxEntrySize;
 		this.maxTotalSize = maxTotalSize;
-		this.accessTimeout = accessTimeout;
+		this.cacheTimeout = cacheTimeout;
 		this.refresher = refresher;
-		this.refreshTimeout = refreshTimeout;
 		this.root = root;
 	}
 	
 	public ResourceCacheProvider(URI root, Principal principal, long maxEntrySize, long maxTotalSize, long accessTimeout, CacheRefresher refresher, long refreshTimeout) throws IOException {
-		this((ManageableContainer<?>) ResourceUtils.mkdir(root, principal), maxEntrySize, maxTotalSize, accessTimeout, refresher, refreshTimeout);
+		this((ManageableContainer<?>) ResourceUtils.mkdir(root, principal), maxEntrySize, maxTotalSize, accessTimeout, refresher);
 	}
 	
 	@Override
@@ -45,7 +44,7 @@ public class ResourceCacheProvider implements CacheProvider {
 					if (child == null) {
 						child = root.create(name, Resource.CONTENT_TYPE_DIRECTORY);
 					}
-					caches.put(name, new ResourceCache((ManageableContainer<?>) child, maxEntrySize, maxTotalSize, accessTimeout, refresher, refreshTimeout));
+					caches.put(name, new ResourceCache((ManageableContainer<?>) child, maxEntrySize, maxTotalSize, refresher, new LastModifiedTimeoutManager(cacheTimeout)));
 				}
 			}
 		}

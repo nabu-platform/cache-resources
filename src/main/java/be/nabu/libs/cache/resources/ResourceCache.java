@@ -5,12 +5,14 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.List;
 
-import be.nabu.libs.cache.api.Cache;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import be.nabu.libs.cache.api.CacheEntry;
 import be.nabu.libs.cache.api.CacheRefresher;
+import be.nabu.libs.cache.api.CacheTimeoutManager;
 import be.nabu.libs.cache.api.DataSerializer;
 import be.nabu.libs.cache.api.ExplorableCache;
 import be.nabu.libs.cache.api.LimitedCache;
@@ -34,23 +36,23 @@ import be.nabu.utils.io.api.ByteBuffer;
 import be.nabu.utils.io.api.ReadableContainer;
 import be.nabu.utils.io.api.WritableContainer;
 
-public class ResourceCache implements Cache, ExplorableCache, LimitedCache {
+public class ResourceCache implements ExplorableCache, LimitedCache {
 
-	private long maxEntrySize, cacheTimeout;
+	private Logger logger = LoggerFactory.getLogger(getClass());
+	private long maxEntrySize;
 	private ManageableContainer<?> container;
 	private CacheRefresher refresher;
 	private String extension = "bin";
 	private long maxCacheSize;
-	private long refreshTimeout;
 	private DataSerializer<?> keySerializer, valueSerializer;
+	private CacheTimeoutManager timeoutManager;
 	
-	public ResourceCache(ManageableContainer<?> container, long maxEntrySize, long maxCacheSize, long cacheTimeout, CacheRefresher cacheRefresher, long refreshTimeout) {
+	public ResourceCache(ManageableContainer<?> container, long maxEntrySize, long maxCacheSize, CacheRefresher cacheRefresher, CacheTimeoutManager timeoutManager) {
 		this.container = container;
 		this.maxEntrySize = maxEntrySize;
 		this.maxCacheSize = maxCacheSize;
-		this.cacheTimeout = cacheTimeout;
+		this.timeoutManager = timeoutManager;
 		this.refresher = cacheRefresher;
-		this.refreshTimeout = refreshTimeout;
 	}
 	
 	@Override
@@ -68,6 +70,7 @@ public class ResourceCache implements Cache, ExplorableCache, LimitedCache {
 			serializeValue(serializedKey, value, new ResourceWritableContainer((WritableResource) child));
 		}
 		catch (IOException e) {
+			logger.error("Could not store data in: " + child, e);
 			// if we fail to serialize the value (e.g. because it is too big), we must delete the resource
 			container.delete(serializedKey + "." + extension);
 			return false;
@@ -88,10 +91,7 @@ public class ResourceCache implements Cache, ExplorableCache, LimitedCache {
 	public synchronized void refresh() throws IOException {
 		if (refresher != null) {
 			for (Resource resource : container) {
-				// if it was last modified before the refresh timeout, refresh it
-				if (resource instanceof TimestampedResource && ((TimestampedResource) resource).getLastModified().before(new Date(new Date().getTime() - refreshTimeout))) {
-					refresh(resource);
-				}
+				refresh(resource);
 			}
 		}
 	}
@@ -149,13 +149,18 @@ public class ResourceCache implements Cache, ExplorableCache, LimitedCache {
 	@Override
 	public Object get(Object key) throws IOException {
 		String serializedKey = serializeKey(key);
+		return getWithSerializedKey(serializedKey);
+	}
+
+	Object getWithSerializedKey(String serializedKey) throws IOException {
 		Resource child = container.getChild(serializedKey + "." + extension);
 		if (child == null) {
 			// it could be that the entry does not exist or that it is still being added (e.g. the resource exists but not yet the value mapping)
 			// it is however a cache so best effort
 			return null;
 		}
-		else if (((TimestampedResource) child).getLastModified().before(new Date(new Date().getTime() - cacheTimeout))) {
+		// either we use access based timeouts and the last accessed is too old
+		else if (timeoutManager.isTimedOut(this, new ResourceEntry(this, child))) {
 			// if we can't refresh the child, remove it
 			if (refresher == null || !refresh(child)) {
 				container.delete(child.getName());
@@ -247,16 +252,8 @@ public class ResourceCache implements Cache, ExplorableCache, LimitedCache {
 		return maxEntrySize;
 	}
 
-	public long getAccessTimeout() {
-		return cacheTimeout;
-	}
-
 	public long getMaxCacheSize() {
 		return maxCacheSize;
-	}
-
-	public long getRefreshTimeout() {
-		return refreshTimeout;
 	}
 
 	public DataSerializer<?> getKeySerializer() {
@@ -284,9 +281,14 @@ public class ResourceCache implements Cache, ExplorableCache, LimitedCache {
 	public Collection<CacheEntry> getEntries() {
 		List<CacheEntry> entries = new ArrayList<CacheEntry>();
 		for (Resource resource : container) {
-			entries.add(new ResourceEntry(resource));
+			entries.add(new ResourceEntry(this, resource));
 		}
 		return entries;
 	}
-	
+
+	@Override
+	public CacheEntry getEntry(Object key) {
+		return null;
+	}
+
 }
