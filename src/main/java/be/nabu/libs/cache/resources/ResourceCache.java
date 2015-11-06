@@ -206,7 +206,7 @@ public class ResourceCache implements Cache, ExplorableCache, LimitedCache {
 		transcoder.setBytesPerLine(0);
 		WritableContainer<ByteBuffer> writable = TranscoderUtils.wrapWritable(buffer, transcoder);
 		writable = TranscoderUtils.wrapWritable(writable, new GZIPEncoder());
-		serializer.serialize(key, IOUtils.toOutputStream(IOUtils.limitWritable(writable, maxEntrySize), true));
+		serializer.serialize(key, IOUtils.toOutputStream(maxEntrySize > 0 ? IOUtils.limitWritable(writable, maxEntrySize) : writable, true));
 		writable.flush();
 		return new String(IOUtils.toBytes(buffer), "ASCII").replace('/', '-');
 	}
@@ -218,7 +218,7 @@ public class ResourceCache implements Cache, ExplorableCache, LimitedCache {
 			throw new IllegalArgumentException("No serializer found for the value");
 		}
 		writable = TranscoderUtils.wrapWritable(writable, new GZIPEncoder());
-		serializer.serialize(value, IOUtils.toOutputStream(IOUtils.limitWritable(writable, maxEntrySize - key.length()), true));
+		serializer.serialize(value, IOUtils.toOutputStream(maxEntrySize > 0 ? IOUtils.limitWritable(writable, maxEntrySize - key.length()) : writable, true));
 		writable.close();
 	}
 	
