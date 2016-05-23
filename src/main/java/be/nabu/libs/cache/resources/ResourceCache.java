@@ -149,7 +149,16 @@ public class ResourceCache implements ExplorableCache, LimitedCache {
 	@Override
 	public Object get(Object key) throws IOException {
 		String serializedKey = serializeKey(key);
-		return getWithSerializedKey(serializedKey);
+		try {
+			return getWithSerializedKey(serializedKey);
+		}
+		catch (IOException e) {
+			// if we fail to deserialize the value because of some I/O issues, we must delete the backing resource
+			synchronized(this) {
+				container.delete(serializedKey + "." + extension);
+			}
+			return null;
+		}
 	}
 
 	Object getWithSerializedKey(String serializedKey) throws IOException {
