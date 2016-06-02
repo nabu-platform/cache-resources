@@ -152,7 +152,7 @@ public class ResourceCache implements ExplorableCache, LimitedCache {
 		try {
 			return getWithSerializedKey(serializedKey);
 		}
-		catch (IOException e) {
+		catch (Exception e) {
 			// if we fail to deserialize the value because of some I/O issues, we must delete the backing resource
 			synchronized(this) {
 				container.delete(serializedKey + "." + extension);
