@@ -297,6 +297,15 @@ public class ResourceCache implements ExplorableCache, LimitedCache {
 
 	@Override
 	public CacheEntry getEntry(Object key) {
+		try {
+			Resource child = container.getChild(serializeKey(key) + "." + extension);
+			if (child != null) {
+				return new ResourceEntry(this, child);
+			}
+		}
+		catch (IOException e) {
+			// ignore
+		}
 		return null;
 	}
 
