@@ -3,26 +3,19 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>be.nabu.libs.cache</groupId>
 	<artifactId>cache-resources</artifactId>
-	<packaging>bundle</packaging>
-	<version>1.0-SNAPSHOT</version>
+	<packaging>jar</packaging>
+	<version>${be.nabu.libs.cache-cache-resources-version}</version>
 	<name>cache-resources</name>
 	<url>http://maven.apache.org</url>
 
+	<parent>
+		<groupId>be.nabu</groupId>
+		<artifactId>core</artifactId>
+		<version>1.0-SNAPSHOT</version>
+	</parent>
+
 	<build>
 		<plugins>
-			<plugin>
-				<groupId>org.apache.felix</groupId>
-				<artifactId>maven-bundle-plugin</artifactId>
-				<version>2.3.7</version>
-				<extensions>true</extensions>
-				<configuration>
-					<instructions>
-						<Bundle-SymbolicName>${project.groupId}.${project.artifactId}</Bundle-SymbolicName>
-						<Bundle-Name>${project.artifactId}</Bundle-Name>
-						<Bundle-Version>1.0.0</Bundle-Version>
-					</instructions>
-				</configuration>
-			</plugin>
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
@@ -38,23 +31,19 @@
 		<dependency>
 			<groupId>be.nabu.utils</groupId>
 			<artifactId>utils-codec</artifactId>
-			<version>1.1-SNAPSHOT</version>
 		</dependency>
 		<dependency>
 			<groupId>be.nabu.libs.cache</groupId>
 			<artifactId>cache-api</artifactId>
-			<version>1.0-SNAPSHOT</version>
 		</dependency>
 		<dependency>
 			<groupId>be.nabu.libs.resources</groupId>
 			<artifactId>resources-api</artifactId>
-			<version>1.1-SNAPSHOT</version>
 		</dependency>
 
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
-			<version>1.6.4</version>
 		</dependency>
 	</dependencies>
 </project>
