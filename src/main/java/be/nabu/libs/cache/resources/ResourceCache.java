@@ -69,7 +69,7 @@ public class ResourceCache implements ExplorableCache, LimitedCache {
 		try {
 			serializeValue(serializedKey, value, new ResourceWritableContainer((WritableResource) child));
 		}
-		catch (IOException e) {
+		catch (Exception e) {
 			logger.error("Could not store data in: " + child, e);
 			// if we fail to serialize the value (e.g. because it is too big), we must delete the resource
 			container.delete(serializedKey + "." + extension);
@@ -153,6 +153,7 @@ public class ResourceCache implements ExplorableCache, LimitedCache {
 			return getWithSerializedKey(serializedKey);
 		}
 		catch (Exception e) {
+			logger.error("Could not retrieve data", e);
 			// if we fail to deserialize the value because of some I/O issues, we must delete the backing resource
 			synchronized(this) {
 				container.delete(serializedKey + "." + extension);
