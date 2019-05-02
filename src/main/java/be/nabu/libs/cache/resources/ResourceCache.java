@@ -147,6 +147,15 @@ public class ResourceCache implements ExplorableCache, LimitedCache {
 	}
 
 	@Override
+	public void refresh(Object key) throws IOException {
+		String serializedKey = serializeKey(key);
+		Resource child = container.getChild(serializedKey + "." + extension);
+		if (child != null) {
+			refresh(child);
+		}
+	}
+	
+	@Override
 	public Object get(Object key) throws IOException {
 		String serializedKey = serializeKey(key);
 		try {
@@ -170,7 +179,7 @@ public class ResourceCache implements ExplorableCache, LimitedCache {
 			return null;
 		}
 		// either we use access based timeouts and the last accessed is too old
-		else if (timeoutManager.isTimedOut(this, new ResourceEntry(this, child))) {
+		else if (timeoutManager != null && timeoutManager.isTimedOut(this, new ResourceEntry(this, child))) {
 			// if we can't refresh the child, remove it
 			if (refresher == null || !refresh(child)) {
 				container.delete(child.getName());
