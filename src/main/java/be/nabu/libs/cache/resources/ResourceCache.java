@@ -1,10 +1,15 @@
 package be.nabu.libs.cache.resources;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.charset.Charset;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -13,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import be.nabu.libs.cache.api.CacheEntry;
 import be.nabu.libs.cache.api.CacheRefresher;
 import be.nabu.libs.cache.api.CacheTimeoutManager;
+import be.nabu.libs.cache.api.CacheWithHash;
 import be.nabu.libs.cache.api.DataSerializer;
 import be.nabu.libs.cache.api.ExplorableCache;
 import be.nabu.libs.cache.api.LimitedCache;
@@ -35,8 +41,9 @@ import be.nabu.utils.io.IOUtils;
 import be.nabu.utils.io.api.ByteBuffer;
 import be.nabu.utils.io.api.ReadableContainer;
 import be.nabu.utils.io.api.WritableContainer;
+import be.nabu.utils.io.containers.chars.HexReadableCharContainer;
 
-public class ResourceCache implements ExplorableCache, LimitedCache {
+public class ResourceCache implements ExplorableCache, LimitedCache, CacheWithHash {
 
 	private Logger logger = LoggerFactory.getLogger(getClass());
 	private long maxEntrySize;
@@ -46,6 +53,8 @@ public class ResourceCache implements ExplorableCache, LimitedCache {
 	private long maxCacheSize;
 	private DataSerializer<?> keySerializer, valueSerializer;
 	private CacheTimeoutManager timeoutManager;
+	// do we want to hash the data itself or the metadata?
+	private boolean hashMetadata = true;
 	
 	public ResourceCache(ManageableContainer<?> container, long maxEntrySize, long maxCacheSize, CacheRefresher cacheRefresher, CacheTimeoutManager timeoutManager) {
 		this.container = container;
@@ -316,6 +325,29 @@ public class ResourceCache implements ExplorableCache, LimitedCache {
 		catch (IOException e) {
 			// ignore
 		}
+		return null;
+	}
+
+	@Override
+	public String hash(Object key) {
+		CacheEntry entry = getEntry(key);
+		// if this boolean is turned on, we don't want to hash the actual data. it may be large and either way incur I/O overhead
+		// instead we hash the metadata (like last modified), assuming they will correctly change when the data is updated
+		if (hashMetadata) {
+			Date lastModified = entry.getLastModified();
+			if (lastModified != null) {
+				long size = entry.getSize();
+				try {
+					MessageDigest instance = MessageDigest.getInstance("MD5");
+					byte [] digest = instance.digest((lastModified.toString() + "-" + size).getBytes("UTF-8"));
+					return IOUtils.toString(new HexReadableCharContainer(IOUtils.wrap(digest, true)));
+				}
+				catch (Exception e) {
+					throw new RuntimeException(e);
+				}
+			}
+		}
+		// TODO: not implemented yet
 		return null;
 	}
 
