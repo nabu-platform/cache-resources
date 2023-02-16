@@ -333,7 +333,7 @@ public class ResourceCache implements ExplorableCache, LimitedCache, CacheWithHa
 		CacheEntry entry = getEntry(key);
 		// if this boolean is turned on, we don't want to hash the actual data. it may be large and either way incur I/O overhead
 		// instead we hash the metadata (like last modified), assuming they will correctly change when the data is updated
-		if (hashMetadata) {
+		if (hashMetadata && entry != null) {
 			Date lastModified = entry.getLastModified();
 			if (lastModified != null) {
 				long size = entry.getSize();
